@@ -1,0 +1,22 @@
+mrr:
+    0.1,        0.1111,     0.125,      0.2,        0.2; 
+    1037798,    1106007,    962179,     1112341,    1121709 
+
+ndcg@10:
+    0.0295,     0.0694,     0.0729,     0.0782,     0.1052; 
+    1037798,    962179,     1106007,    489204,     1121709  
+
+1037798:
+    who is robert gray                      -->     ['who', 'robert', 'grai']
+1106007:
+    define visceral?                        -->     ['defin', 'viscer']
+962179:
+    when was the salvation army founded     -->     ['when', 'salvat', 'armi', 'found']
+1112341:
+    what is the daily life of thai people   -->     ['what', 'daili', 'life', 'thai', 'peopl']
+489204:
+    right pelvic pain causes                -->     ['right', 'pelvic', 'pain', 'caus']
+1121709:
+    what are the three percenters?          -->     ['what', 'three', 'percent']
+
+
