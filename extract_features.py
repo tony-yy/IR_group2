@@ -16,6 +16,7 @@ import random
 import nltk
 from nltk.translate.bleu_score import sentence_bleu
 from nltk.translate.bleu_score import SmoothingFunction
+from bm25_passage_rank import set_bm25_parameters
 
 # print("import finished")
 # collection paths:
@@ -64,9 +65,6 @@ def get_docid_list_from_file(data_path):
     # print(type(docid))
     return docid
 
-def query_expansion(query):
-    pass
-
 # query-doc features
 def tf_t_d(docid: str, term:str):
     doc_vec = index_reader.get_document_vector(docid)
@@ -103,12 +101,6 @@ def doc_len(docid: str):
         if type(doc_vec[token]) is int:
             doclen += doc_vec[token]
     return doclen
-
-def doc_len_list():
-    pass
-
-def doc_stop_cover():
-    pass
 
 # query performance feature
 def SCQ_d_t(docid: str, term:str):
@@ -150,6 +142,18 @@ def query_n_gram_score(query, docid):
     tokenized_query = nltk.word_tokenize(query)
     
     return sentence_bleu(sentences, tokenized_query, smoothing_function=SmoothingFunction().method4)
+
+def query_expansion(query: str):
+    # 
+    local_searcher = SimpleSearcher(index_dir)
+    set_bm25_parameters(local_searcher, index_dir, k1=0.82, b=0.68)
+    hits = local_searcher.search(query, k=5)
+    # docids = [hit.docid for hit in hits]
+    passages = ""
+    for hit in hits:
+        passages += json.loads(local_searcher.doc(hit.docid).raw())['contents'] + " "
+    
+    return query+" "+passages
 
 def calc_n_format_feats(qrel_dir:str=train_label_dir, query_dir=train_query_dir):
     '''
