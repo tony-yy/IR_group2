@@ -17,7 +17,7 @@ import csv
 from tqdm import tqdm
 from pyserini.search import SimpleSearcher
 from pyserini.index import IndexReader
-from extract_features import SCQ_d_t, bm25_term, doc_len, ictf_t_d, index_dir, query_n_gram_score, tf_t_d, tfidf_t_d, train_docids
+from extract_features import SCQ_d_t, bm25_term, doc_len, ictf_t_d, index_dir, query_expansion, query_n_gram_score, tf_t_d, tfidf_t_d, train_docids
 import random
 from scipy.sparse.csc import csc_matrix
 
@@ -55,6 +55,7 @@ def load_test_data_from_file(test_query_path: str, collection_docid_path: str):
     
     for row in tqdm(test_entries):
         qid, query = row
+        query = query_expansion(query)
         tokenized_query = []
         for token in index_reader.analyze(query):
             tokenized_query += index_reader.analyze(token)
@@ -108,6 +109,7 @@ def load_test_data_from_file(test_query_path: str, collection_docid_path: str):
     return x, docid_list
 
 def load_test_data_by_query(query: str, docid: str, feats_selection:list=None):
+    query = query_expansion(query)
     x = []
     tokenized_query = []
     for token in index_reader.analyze(query):
@@ -152,14 +154,6 @@ def load_test_data_by_query(query: str, docid: str, feats_selection:list=None):
     return x, docid
 
 def train(x_train, y_train, q_train, model_save_path):
-    '''
-    :param x_train:
-    :param y_train:
-    :param q_train:
-    :param model_save_path:
-    :return:
-    '''
-
     train_data = lgb.Dataset(x_train, label=y_train, group=q_train)
     params = {
         'task': 'train',
@@ -174,22 +168,13 @@ def train(x_train, y_train, q_train, model_save_path):
         'num_iterations': 250,
         'learning_rate': 0.01,  
         'num_leaves': 31, 
-        # 'max_depth':6,
-        'tree_learner': 'serial', 
         'min_data_in_leaf': 30,  
         'verbose': 2
     }
     gbm = lgb.train(params, train_data, valid_sets=[train_data])
     gbm.save_model(model_save_path)
 
-
 def predict(x_test, retrieved_docs: list, model_input_path, retri_docids:bool=False):
-    '''
-    :param x_test:
-    :param comments:
-    :param model_input_path:
-    :return:
-    '''
 
     gbm = lgb.Booster(model_file=model_input_path)  
 
@@ -207,17 +192,8 @@ def predict(x_test, retrieved_docs: list, model_input_path, retri_docids:bool=Fa
     rst = t_results if retri_docids else (ypred, predicted_sorted_indexes)
     return rst
 
-def plot_print_feature_shap(model_path, data_feats, type, feats_col_name):
-    '''
-    :param model_path:
-    :param data_feats:
-    :param type:
-    :return:
-    '''
+def plot_print_feature_shap(model_path, data_feats, feats_col_name):
 
-    # if not (os.path.exists(model_path) and os.path.exists(data_feats)):
-    #     print("file no exists! {}, {}".format(model_path, data_feats))
-    #     sys.exit(0)
     gbm = lgb.Booster(model_file=model_path)
     gbm.params["objective"] = "regression"
     
@@ -232,21 +208,13 @@ def plot_print_feature_shap(model_path, data_feats, type, feats_col_name):
     explainer = shap.TreeExplainer(gbm)
     shap_values = explainer.shap_values(df_feature[feats_col_name])
 
-    if type == 1:
-        # rank the importance of features with shap score
-        shap.summary_plot(shap_values, df_feature[feats_col_name], plot_type="bar")
-        shap.summary_plot(shap_values, df_feature[feats_col_name])
-    if type == 2:
-        feat_name = feats_col_name[1]
-        shap.dependence_plot(feat_name, shap_values, df_feature[feats_col_name], interaction_index=None, show=True)
+    shap.summary_plot(shap_values, df_feature[feats_col_name], plot_type="bar")
+    shap.summary_plot(shap_values, df_feature[feats_col_name])
+
     # impact of interaction of two features on the result
-    if type == 3:
-        feat_name1, feat_name2 = feats_col_name[0], feats_col_name[1]
-        shap.dependence_plot(feat_name1, shap_values, df_feature[feats_col_name], interaction_index=feat_name2, show=True)
-    # features interaction evaluation
-    if type == 4:
-        shap_interaction_values = explainer.shap_interaction_values(df_feature[feats_col_name])
-        shap.summary_plot(shap_interaction_values, df_feature[feats_col_name], max_display=4, show=True)
+    feat_name1, feat_name2 = feats_col_name[0], feats_col_name[1]
+    shap.dependence_plot(feat_name1, shap_values, df_feature[feats_col_name], interaction_index=feat_name2, show=True)
+
 
 
 if __name__ == '__main__':
@@ -266,8 +234,7 @@ if __name__ == '__main__':
     #                         "sel7":[0,1,2,4,7]
     #                 }
     feats_selection = {"sel1":[0,1,2,7]}
-    
-    # -train: remains
+
     if sys.argv[1] == '-train':
         # per feature analysis
         for sel in feats_selection:
@@ -300,19 +267,7 @@ if __name__ == '__main__':
                 grouped_test_entry[qid] = [docid]
 
         rst_to_dump = ""
-        '''
-        for row in tqdm(test_line):
-            # print(row)
-            qid, _, docid, rel = row[0].split(" ")
-            query = [q_entry[1] for q_entry in query_list if q_entry[0] == qid][0]
-            x, _ = load_test_data_by_query(query, docid)
-            score, _, _ = predict(x, [docid], baseline_model_path)
-            assert len(score.tolist()) == 1
-            score = score.tolist()[0]
-            rank = 1 if score>0 else 0
-            # qid Q0 docid rank score STANDARD
-            rst_to_dump += qid+" "+"Q0"+" "+docid+" "+str(rank)+" "+str(score)+" "+"STANDARD"+"\n"
-        '''
+        
         for sel in feats_selection:
             crnt_rst_path = "results/improved/l2r_refined_rst_"+sel+".trec"
             crnt_model_path = "model/model_refined_"+sel+".md"
@@ -353,6 +308,6 @@ if __name__ == '__main__':
         # plot_print_feature_shap(mode_path_2, data_feats, 1, feats_col_name2)
         # plot_print_feature_shap(mode_path_3, data_feats, 1, feats_col_name3)
         # plot_print_feature_shap(mode_path_4, data_feats, 1, feats_col_name4)
-        plot_print_feature_shap(mode_path_5, data_feats, 1, feats_col_name5)
+        plot_print_feature_shap(mode_path_5, data_feats, feats_col_name5)
 
     
